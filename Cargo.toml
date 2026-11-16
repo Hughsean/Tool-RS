@@ -1,17 +1,40 @@
-# 顶层只做 workspace 壳子：不放 [package]，不放业务代码。
-# 每个工具是一个独立 crate（crates/<tool>），自带 Cargo.toml 和依赖。
+# 根包：所有工具的 bin 都在 bin/ 下，源码放哪由 [[bin]] 的 path 决定。
+# 依赖是包级别的 —— 这里列的东西所有 bin 共享，编译时全量参与。
+# 重依赖（image/gif/image-webp）通过 tool-media 传进来，轻量工具也会陪跑。
+[package]
+name = "tool-rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# 裸 `cargo run` 跑哪个工具。
+default-run = "webp2gif"
+
+# 每个工具一个 bin：源码放 bin/ 下，不受 src/bin 自动发现的限制。
+[[bin]]
+name = "case"
+path = "bin/case.rs"
+
+[[bin]]
+name = "count"
+path = "bin/count.rs"
+
+[[bin]]
+name = "webp2gif"
+path = "bin/webp2gif.rs"
+
+# 共享库仍独立成 crate，按领域拆分，改它们不会牵动无关工具。
 [workspace]
 resolver = "3"
 members = ["crates/*"]
 
-# 全仓统一的元信息，子 crate 用 `xxx.workspace = true` 继承。
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 
-# 全仓统一的依赖版本。子 crate 只写 `clap.workspace = true`，
-# 版本号集中在这里改，避免各工具漂移出不同的 clap/anyhow 版本。
+# 全仓统一的依赖版本，子 crate 用 `dep.workspace = true` 继承。
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
@@ -19,3 +42,9 @@ clap = { version = "4", features = ["derive"] }
 [profile.release]
 lto = "thin"
 strip = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+tool-common = { version = "0.1.0", path = "crates/common" }
+tool-media = { version = "0.1.0", path = "crates/media" }

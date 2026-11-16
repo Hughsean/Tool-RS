@@ -90,7 +90,7 @@ mod tests {
         let mut animation = Animation::new(4, 2, loop_count);
         for index in 0..frame_count {
             let tone = (index % 2) as u8 * 200;
-            let rgba = vec![tone, 255 - tone, 128, 255].repeat(4 * 2);
+            let rgba = [tone, 255 - tone, 128, 255].repeat(4 * 2);
             animation.frames.push(Frame::new(rgba, delay));
         }
         animation
