@@ -1,0 +1,12 @@
+[package]
+name = "tool-media"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+gif = "0.14.2"
+image = { version = "0.25.9", default-features = false }
+image-webp = "0.2.4"

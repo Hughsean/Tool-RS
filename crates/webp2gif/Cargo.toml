@@ -1,0 +1,12 @@
+[package]
+name = "webp2gif"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+tool-common = { version = "0.1.0", path = "../common" }
+tool-media = { version = "0.1.0", path = "../media" }

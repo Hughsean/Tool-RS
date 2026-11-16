@@ -1,0 +1,21 @@
+# 顶层只做 workspace 壳子：不放 [package]，不放业务代码。
+# 每个工具是一个独立 crate（crates/<tool>），自带 Cargo.toml 和依赖。
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+# 全仓统一的元信息，子 crate 用 `xxx.workspace = true` 继承。
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+# 全仓统一的依赖版本。子 crate 只写 `clap.workspace = true`，
+# 版本号集中在这里改，避免各工具漂移出不同的 clap/anyhow 版本。
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+
+[profile.release]
+lto = "thin"
+strip = true
