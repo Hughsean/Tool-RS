@@ -38,8 +38,10 @@ impl<T> Default for Container<T> {
 pub struct Item {
     /// 该元素上方的注释。
     pub leading: Vec<Comment>,
-    /// 与上一个元素之间是否隔了空行。
+    /// 与上一个元素之间是否隔了空行（有注释时指注释块之前）。
     pub blank_before: bool,
+    /// `leading` 的最后一个注释与值之间是否有空行（`leading` 为空时无意义）。
+    pub blank_after_leading: bool,
     pub value: Value,
     /// 同一行末尾的注释（`1, // 说明`）。
     pub trailing: Option<Comment>,
@@ -50,8 +52,10 @@ pub struct Item {
 pub struct Member {
     /// 该成员上方的注释。
     pub leading: Vec<Comment>,
-    /// 与上一个成员之间是否隔了空行。
+    /// 与上一个成员之间是否隔了空行（有注释时指注释块之前）。
     pub blank_before: bool,
+    /// `leading` 的最后一个注释与键之间是否有空行（`leading` 为空时无意义）。
+    pub blank_after_leading: bool,
     /// 已解码的键名，打印时重新转义。
     pub key: String,
     pub value: Value,
@@ -83,8 +87,6 @@ impl Comment {
 pub struct Document {
     /// 根值上方的注释。
     pub leading: Vec<Comment>,
-    /// 第一个注释 / 根值之前是否有空行。
-    pub blank_before: bool,
     pub value: Value,
     /// 与根值同一行末尾的注释。
     pub trailing: Option<Comment>,

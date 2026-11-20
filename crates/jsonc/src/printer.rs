@@ -38,7 +38,7 @@ struct Printer<'a> {
 
 impl Printer<'_> {
     fn document(&mut self, document: &Document) {
-        self.leading(&document.leading, 0, true);
+        self.leading(&document.leading, 0);
         self.value(&document.value, 0);
         if let Some(comment) = &document.trailing {
             self.out.push(' ');
@@ -78,7 +78,8 @@ impl Printer<'_> {
             if index > 0 && item.blank_before {
                 self.out.push('\n');
             }
-            self.leading(&item.leading, level + 1, index == 0);
+            self.leading(&item.leading, level + 1);
+            self.blank_after_leading(&item.leading, item.blank_after_leading);
             self.indent(level + 1);
             self.value(&item.value, level + 1);
             if index < last {
@@ -110,7 +111,8 @@ impl Printer<'_> {
             if index > 0 && member.blank_before {
                 self.out.push('\n');
             }
-            self.leading(&member.leading, level + 1, index == 0);
+            self.leading(&member.leading, level + 1);
+            self.blank_after_leading(&member.leading, member.blank_after_leading);
             self.indent(level + 1);
             write_quoted(&mut self.out, &member.key);
             self.out.push_str(": ");
@@ -126,13 +128,20 @@ impl Printer<'_> {
         self.out.push('}');
     }
 
-    fn leading(&mut self, comments: &[Comment], level: usize, first_in_block: bool) {
-        for (index, comment) in comments.iter().enumerate() {
-            if comment.blank_before && !(first_in_block && index == 0) {
+    fn leading(&mut self, comments: &[Comment], level: usize) {
+        for comment in comments {
+            if comment.blank_before {
                 self.out.push('\n');
             }
             self.indent(level);
             self.out.push_str(&comment.text);
+            self.out.push('\n');
+        }
+    }
+
+    /// 注释块与所属键/值之间的空行。
+    fn blank_after_leading(&mut self, leading: &[Comment], blank: bool) {
+        if blank && !leading.is_empty() {
             self.out.push('\n');
         }
     }

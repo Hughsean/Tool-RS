@@ -10,8 +10,7 @@ pub fn parse(source: &str) -> Result<Document> {
     let mut parser = Parser::new(source);
 
     let Trivia {
-        comments: leading,
-        blank_before,
+        comments: leading, ..
     } = parser.collect_trivia()?;
     let value = parser.parse_value()?;
     parser.skip_inline_ws();
@@ -25,11 +24,26 @@ pub fn parse(source: &str) -> Result<Document> {
 
     Ok(Document {
         leading,
-        blank_before,
         value,
         trailing,
         dangling,
     })
+}
+
+/// 把 trivia 拆成三份：注释、块前空行、注释块后的空行。
+///
+/// 第一段空行交给 `blank_before` 表达并从注释上清除，
+/// 否则打印时同一处空行会被两个字段各写一次（曾导致不幂等）。
+fn split_leading(mut trivia: Trivia) -> (Vec<Comment>, bool, bool) {
+    let blank_after_leading = trivia.blank_before;
+    match trivia.comments.first_mut() {
+        Some(first) => {
+            let blank_before = first.blank_before;
+            first.blank_before = false;
+            (trivia.comments, blank_before, blank_after_leading)
+        }
+        None => (trivia.comments, trivia.blank_before, false),
+    }
 }
 
 /// 解析过程中的零散信息：注释（各自带空行标记）和"紧邻元素的空行"。
@@ -173,6 +187,7 @@ impl<'a> Parser<'a> {
         self.bump(); // '{'
         let mut members: Vec<Member> = Vec::new();
         let mut trivia = self.collect_trivia()?;
+        let mut needs_separator = false;
         loop {
             if self.peek() == Some(b'}') {
                 self.bump();
@@ -180,6 +195,16 @@ impl<'a> Parser<'a> {
                     items: members,
                     dangling: trivia.comments,
                 }));
+            }
+            if needs_separator {
+                // 逗号可以写在注释或换行之后（前导逗号风格）。
+                if self.peek() != Some(b',') {
+                    return Err(self.error("对象成员之间缺少逗号"));
+                }
+                self.bump();
+                needs_separator = false;
+                trivia = self.collect_trivia()?;
+                continue;
             }
             if self.peek() != Some(b'"') {
                 return Err(self.error("对象的键必须是字符串"));
@@ -196,20 +221,20 @@ impl<'a> Parser<'a> {
             let value = self.parse_value()?;
             let (has_comma, trailing) = self.finish_entry()?;
 
-            let mut leading = trivia.comments;
+            let (comments, blank_before, blank_after_leading) = split_leading(trivia);
+            let mut leading = comments;
             leading.extend(between.comments);
             members.push(Member {
                 leading,
-                blank_before: trivia.blank_before,
+                blank_before,
+                blank_after_leading,
                 key,
                 value,
                 trailing,
             });
 
             trivia = self.collect_trivia()?;
-            if !has_comma && self.peek() != Some(b'}') {
-                return Err(self.error("对象成员之间缺少逗号"));
-            }
+            needs_separator = !has_comma;
         }
     }
 
@@ -217,6 +242,7 @@ impl<'a> Parser<'a> {
         self.bump(); // '['
         let mut items: Vec<Item> = Vec::new();
         let mut trivia = self.collect_trivia()?;
+        let mut needs_separator = false;
         loop {
             if self.peek() == Some(b']') {
                 self.bump();
@@ -225,40 +251,60 @@ impl<'a> Parser<'a> {
                     dangling: trivia.comments,
                 }));
             }
+            if needs_separator {
+                // 逗号可以写在注释或换行之后（前导逗号风格）。
+                if self.peek() != Some(b',') {
+                    return Err(self.error("数组元素之间缺少逗号"));
+                }
+                self.bump();
+                needs_separator = false;
+                trivia = self.collect_trivia()?;
+                continue;
+            }
+
             let value = self.parse_value()?;
             let (has_comma, trailing) = self.finish_entry()?;
+            let (leading, blank_before, blank_after_leading) = split_leading(trivia);
             items.push(Item {
-                leading: trivia.comments,
-                blank_before: trivia.blank_before,
+                leading,
+                blank_before,
+                blank_after_leading,
                 value,
                 trailing,
             });
 
             trivia = self.collect_trivia()?;
-            if !has_comma && self.peek() != Some(b']') {
-                return Err(self.error("数组元素之间缺少逗号"));
-            }
+            needs_separator = !has_comma;
         }
     }
 
     /// 读掉可选逗号和可选行尾注释，报告是否出现过逗号。
+    ///
+    /// 同一行可能出现多个注释（`1 /* a */ /* b */,`），也可能夹在逗号两侧，
+    /// 这些注释会被合并成一条行尾注释（原文用空格拼接），保证不丢内容。
     fn finish_entry(&mut self) -> Result<(bool, Option<Comment>)> {
-        self.skip_inline_ws();
         let mut has_comma = false;
-        if self.peek() == Some(b',') {
-            self.bump();
-            has_comma = true;
+        let mut trailing: Option<Comment> = None;
+
+        loop {
             self.skip_inline_ws();
-        }
-        let trailing = self.read_comment()?.map(Comment::inline);
-        if !has_comma {
-            // 兼容 `1 /* 说明 */ , 2` 这种注释写在逗号前面的写法
-            self.skip_inline_ws();
-            if self.peek() == Some(b',') {
+            if !has_comma && self.peek() == Some(b',') {
                 self.bump();
                 has_comma = true;
+                continue;
+            }
+            match self.read_comment()? {
+                Some(text) => match &mut trailing {
+                    Some(existing) => {
+                        existing.text.push(' ');
+                        existing.text.push_str(&text);
+                    }
+                    None => trailing = Some(Comment::inline(text)),
+                },
+                None => break,
             }
         }
+
         Ok((has_comma, trailing))
     }
 

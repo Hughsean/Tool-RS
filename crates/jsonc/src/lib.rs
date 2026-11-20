@@ -140,6 +140,88 @@ mod tests {
     }
 
     #[test]
+    fn blank_lines_around_a_comment_block_are_not_doubled() {
+        // 回归测试：注释块前后各有一个空行时，两者曾写进同一个字段，
+        // 导致第二遍格式化会少掉一个空行（不幂等）。
+        let source = "{\n  \"b\": 1,\n\n  // 注释块\n  // 第二行\n\n  \"a\": 2\n}\n";
+        let once = formatting(source);
+        // 注释块属于 "a"，排序后 "a" 在前，块前的空行被"块首"规则抑制；
+        // 关键是块后的空行保留且不重复。
+        assert_eq!(
+            once,
+            "{\n  // 注释块\n  // 第二行\n\n  \"a\": 2,\n  \"b\": 1\n}\n"
+        );
+        assert_eq!(format(&once, &FormatOptions::default()).unwrap(), once);
+    }
+
+    #[test]
+    fn formatting_is_idempotent_on_a_busy_document() {
+        let source = r#"{
+  // 头部
+  "zeta": [1, 2, 3],
+
+  /* 块注释 */
+  "Alpha": {
+    "y": null
+    // 收尾
+  },
+  "beta": [
+    // 数组注释
+    "b",
+    "a",
+  ],
+  "url": "https://example.com/a?b=1" // 行尾
+}
+"#;
+        let once = formatting(source);
+        let twice = format(&once, &FormatOptions::default()).unwrap();
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn formatting_is_idempotent_on_edge_cases() {
+        let cases = [
+            "{}",
+            "[]",
+            "{\n  // 只有注释\n}",
+            "[\n  // 只有注释\n]",
+            "{\n  \"a\": 1\n\n  // 结尾注释\n}",
+            "{\n  /* 多行\n     块注释 */\n  \"a\": 1\n}",
+            "[\n  1 /* a */ /* b */,\n  2\n]",
+            "[\n  1 /* 前导逗号 */\n  , 2\n]",
+            "{\n  \"a\": 1 /* 注释 */\n  , \"b\": 2\n}",
+            "[\n  1,\n]",
+            "{\"a\": {\"b\": {\"c\": [1, [2, 3]]}}}",
+            "{\"a\": 1, \"a\": 2}",
+            "\u{feff}{\"b\": 1, \"a\": 2}",
+            "{\"a\":1}\r\n",
+            "{\n\n  \"a\": 1,\n\n\n  \"b\": 2\n}",
+            "[\n  \"https://x/a?b=1\",\n  \"a\"\n]",
+            "{\n  \"a\": \"\\u00e9\\ud83d\\ude00\"\n}",
+            "{\n  \"b\": 1,\n\n  // 注释块\n\n  \"a\": 2\n}",
+        ];
+
+        for source in cases {
+            let once = format(source, &FormatOptions::default())
+                .unwrap_or_else(|error| panic!("输入应当能解析：{source:?}：{error}"));
+            let twice = format(&once, &FormatOptions::default())
+                .unwrap_or_else(|error| panic!("第一遍输出应当能再解析：{source:?}：{error}"));
+            assert_eq!(once, twice, "不幂等：{source:?}");
+        }
+    }
+
+    #[test]
+    fn zero_indent_is_idempotent() {
+        let options = FormatOptions {
+            indent_width: 0,
+            ..FormatOptions::default()
+        };
+        let once = format(r#"{"b": {"y": 1, "x": 2}, "a": [1, 2]}"#, &options).unwrap();
+        let twice = format(&once, &options).unwrap();
+        assert_eq!(once, twice);
+    }
+
+    #[test]
     fn reports_line_and_column_for_syntax_errors() {
         let error = format("{\n  \"a\": 1\n  \"b\": 2\n}", &FormatOptions::default()).unwrap_err();
         let message = error.to_string();
