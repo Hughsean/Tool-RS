@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Result, bail};
 use clap::{CommandFactory, Parser};
-use tool_common::{read_input_bytes, write_output_bytes};
+use tool_common::{needs_explicit_input, read_input_bytes, write_output_bytes};
 use tool_media::gif::{self, GifOptions};
 use tool_media::webp;
 use tool_media::{Animation, LoopCount};
@@ -52,7 +52,9 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    ensure_input_available(args.input.as_deref(), std::io::stdin().is_terminal());
+    if needs_explicit_input(args.input.as_deref(), std::io::stdin().is_terminal()) {
+        show_usage();
+    }
 
     let input = read_input_bytes(args.input.as_deref())?;
     if input.is_empty() {
@@ -84,22 +86,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// 没给输入文件（或显式给了 `-`）时，数据只能来自 stdin。
-/// 若 stdin 恰好是交互终端，`read_to_end` 会一直等人输入，
-/// 所以这种情况要提前拦住，改成打印用法。
-fn reads_stdin(input: Option<&str>) -> bool {
-    matches!(input, None | Some("-"))
-}
-
-fn should_show_help(input: Option<&str>, stdin_is_terminal: bool) -> bool {
-    reads_stdin(input) && stdin_is_terminal
-}
-
-fn ensure_input_available(input: Option<&str>, stdin_is_terminal: bool) {
-    if !should_show_help(input, stdin_is_terminal) {
-        return;
-    }
-
+/// 没有输入文件又处在终端时打印用法并退出，避免卡在 stdin 上。
+fn show_usage() -> ! {
     let mut command = Args::command();
     eprint!("{}", command.render_help());
     eprintln!();
@@ -210,24 +198,12 @@ mod tests {
 
     #[test]
     fn rendered_help_mentions_usage() {
-        // `ensure_input_available` 用的就是这条渲染路径，顺带盯住它别退化。
+        // `show_usage` 用的就是这条渲染路径，顺带盯住它别退化。
         let help = Args::command().render_help().to_string();
         assert!(help.contains("Usage:"));
         // 注意：`cargo test` 下 clap 的命令名来自测试目标，不一定是 bin 名，
         // 所以这里只断言与命名无关的内容。
         assert!(help.contains("--width"));
-    }
-
-    #[test]
-    fn stalls_only_when_stdin_is_a_terminal_and_no_file_is_given() {
-        // 没有输入文件又处在终端：必须拦截，否则会卡在 stdin 上。
-        assert!(should_show_help(None, true));
-        assert!(should_show_help(Some("-"), true));
-        // 有文件参数：正常读取文件。
-        assert!(!should_show_help(Some("a.webp"), true));
-        // stdin 是管道/文件：照旧从 stdin 读。
-        assert!(!should_show_help(None, false));
-        assert!(!should_show_help(Some("-"), false));
     }
 
     #[test]

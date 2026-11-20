@@ -12,9 +12,11 @@
 ├── bin/
 │   ├── case.rs             # 工具：命名风格转换
 │   ├── count.rs            # 工具：行/单词/字符/字节统计
+│   ├── jsonfmt.rs          # 工具：JSONC 格式化 + 字段排序
 │   └── webp2gif.rs         # 工具：动图 WebP -> 动图 GIF
 └── crates/
     ├── common/             # 共享库 tool-common：stdin/stdout 约定、通用 IO
+    ├── jsonc/              # 共享库 tool-jsonc：保留注释的 JSONC AST + 格式化
     └── media/              # 共享库 tool-media：动图模型 + webp/gif 编解码
 ```
 
@@ -30,6 +32,10 @@ cargo t count -- README.md
 cargo t webp2gif -- in.webp out.gif --width 320 --fps 12 --loop 0
 echo "Hello World" | cargo t case snake -
 cargo t webp2gif < in.webp > out.gif       # 省略参数即 stdin/stdout
+
+cargo t jsonfmt -- in.jsonc out.json            # 默认 2 空格缩进 + 字段字母序
+echo '{"b":1,"a":2}' | cargo t jsonfmt         # 管道
+cargo t jsonfmt -- in.jsonc --indent 4 --keep-order
 ```
 
 ```sh
@@ -43,8 +49,9 @@ cargo install --path .                     # 一次装全部工具进 PATH
 
 ### stdin 的行为约定
 
-- `webp2gif` 没给输入文件、而 stdin 是**交互终端**时，会直接打印用法并
-  以退出码 2 退出，不会傻等输入（否则表现就是“卡住”）。
+- `webp2gif` / `jsonfmt` 没给输入文件、而 stdin 是**交互终端**时，会直接打印用法并
+  以退出码 2 退出，不会傻等输入（否则表现就是“卡住”）。判断逻辑在
+  `tool_common::needs_explicit_input`，两个工具共用。
 - stdin 是管道但没数据时，报“输入为空”而不是难懂的解析错误。
 - 终端判断靠 `std::io::IsTerminal`。在 mintty（Git Bash 自带终端）这类环境下，
   原生 Windows 程序看到的 stdin 是管道而非终端，拿不到 TTY 信号，
@@ -108,6 +115,28 @@ path = "bin/foo/main.rs"      # bin/foo/main.rs 里 `mod parser;` → bin/foo/pa
   `required-features = ["heavy"]`，日常命令带 `--features heavy`；
 - **退回独立 crate**：把它拆成 `crates/<tool>`，`cargo run -p <tool>`，
   享受依赖隔离，代价是多一个 Cargo.toml。
+
+## JSONC 工具的分层
+
+`crates/jsonc` 把"带注释的配置"当成和媒体一样的结构化数据来处理，不靠字符串替换：
+
+1. **AST**：`Value` / `Container<T>` / `Member` / `Item` / `Comment`。
+   注释是挂在字段上的 trivia（`leading` / `trailing` / 容器级 `dangling`），
+   所以**排序字段时注释跟着走**，不会停在原地或丢掉。
+2. **解析器**：`tool_jsonc::parse(&str) -> Result<Document>`。支持 `//`、`/* */`、
+   尾逗号、UTF-8 BOM；数字保留原始字面量（`2.50` 不会变成 `2.5`）；
+   错误信息带行列号。
+3. **打印器**：`tool_jsonc::print(&Document, &FormatOptions) -> String`。
+   对象字段按 `(小写键名, 原键名)` 排序，即忽略大小写的字母序；
+   `sort_keys: false` 关掉排序；数组在"无注释 + 全是标量 + 不超宽"时内联成一行。
+
+两个约定：
+
+- **输出不带尾逗号**，所以无注释时结果仍是合法 JSON，可以直接当 JSON 用；
+- **幂等**：格式化两次结果完全一致（端到端验证过 `diff` 为空）。
+
+已知的位置取舍：写在冒号后、换行前的注释（`"a": // 说明\n 1`）会被归到
+该成员的 `leading`，打印到键的上方；跨行块注释保留原缩进，不重新对齐。
 
 ## 媒体工具的分层
 

@@ -24,6 +24,10 @@ path = "bin/count.rs"
 name = "webp2gif"
 path = "bin/webp2gif.rs"
 
+[[bin]]
+name = "jsonfmt"
+path = "bin/jsonfmt.rs"
+
 # 共享库仍独立成 crate，按领域拆分，改它们不会牵动无关工具。
 [workspace]
 resolver = "3"
@@ -47,4 +51,5 @@ strip = true
 anyhow.workspace = true
 clap.workspace = true
 tool-common = { version = "0.1.0", path = "crates/common" }
+tool-jsonc = { version = "0.1.0", path = "crates/jsonc" }
 tool-media = { version = "0.1.0", path = "crates/media" }

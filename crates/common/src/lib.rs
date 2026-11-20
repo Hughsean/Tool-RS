@@ -45,3 +45,40 @@ pub fn write_output_bytes(path: Option<&str>, bytes: &[u8]) -> Result<()> {
         }
     }
 }
+
+/// 没给输入文件（或显式给了 `-`）时，数据只能来自 stdin。
+pub fn reads_stdin(input: Option<&str>) -> bool {
+    matches!(input, None | Some("-"))
+}
+
+/// 需要调用方改成"打印用法"的情形：没有文件输入，而 stdin 是交互终端。
+///
+/// 这时 `read_to_end` 会一直等人输入（表现为"卡住"），所以工具应该
+/// 提前打印用法并以用法错误的退出码退出。
+pub fn needs_explicit_input(input: Option<&str>, stdin_is_terminal: bool) -> bool {
+    reads_stdin(input) && stdin_is_terminal
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stdin_is_used_only_when_input_is_missing_or_dash() {
+        assert!(reads_stdin(None));
+        assert!(reads_stdin(Some("-")));
+        assert!(!reads_stdin(Some("a.jsonc")));
+    }
+
+    #[test]
+    fn needs_explicit_input_only_for_terminal_without_file() {
+        // 没有输入文件又处在终端：必须拦截，否则会卡在 stdin 上。
+        assert!(needs_explicit_input(None, true));
+        assert!(needs_explicit_input(Some("-"), true));
+        // 有文件参数：正常读取文件。
+        assert!(!needs_explicit_input(Some("a.jsonc"), true));
+        // stdin 是管道/重定向：照旧从 stdin 读。
+        assert!(!needs_explicit_input(None, false));
+        assert!(!needs_explicit_input(Some("-"), false));
+    }
+}
